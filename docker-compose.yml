@@ -7,4 +7,4 @@ services:
       dockerfile: Dockerfile
     image: 4teamwork/weasyprint:latest
     ports:
-      - 3000:8080
+      - 3003:8080
