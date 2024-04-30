@@ -5,6 +5,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: 4teamwork/weasyprint:latest
+    image: drdla/weasyprint:latest
     ports:
       - 3003:8080

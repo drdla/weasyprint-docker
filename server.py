@@ -32,16 +32,16 @@ class URLFetcher:
             return default_url_fetcher(url)
 
         if parsed.scheme in ['', 'file'] and parsed.path:
-            if os.path.abspath(parsed.path) in self.valid_paths:
-                return default_url_fetcher(url)
-            else:
-                raise ValueError('Only known path allowed')
+            return default_url_fetcher(url)
+            # if os.path.abspath(parsed.path) in self.valid_paths: # That's bollocks; valid_paths is never set
+            #     return default_url_fetcher(url)
+            # else:
+            #     raise ValueError('Only known path allowed')
 
         raise ValueError('External resources are not allowed')
 
 
 async def render_pdf(request):
-
     form_data = {}
     temp_dir = None
 
