@@ -14,17 +14,20 @@ import logging
 import os.path
 import tempfile
 import sys
+import shutil
+import os
 
-# Configure logging at the top of the script
 logging.basicConfig(
+    stream=sys.stdout,
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)s %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]  # Ensure logs go to stdout
+    format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-logger = logging.getLogger('weasyprint')
+logger = logging.getLogger('weasyprint-server')
 
 CHUNK_SIZE = 65536
+
+temp_dir = tempfile.mkdtemp()
 
 class URLFetcher:
     """URL fetcher that only allows data URLs and known files"""
@@ -38,11 +41,10 @@ class URLFetcher:
             return default_url_fetcher(url)
 
         if parsed.scheme in ['', 'file'] and parsed.path:
-            return default_url_fetcher(url)
-            # if os.path.abspath(parsed.path) in self.valid_paths: # That's bollocks; valid_paths is never set
-                #     return default_url_fetcher(url)
-                # else:
-                #     raise ValueError('Only known path allowed')
+            if os.path.abspath(parsed.path) in self.valid_paths:
+                return default_url_fetcher(url)
+            else:
+                raise ValueError('Only known path allowed')
 
         raise ValueError('External resources are not allowed')
 
@@ -109,17 +111,23 @@ async def render_pdf(request):
         else:
             return await stream_file(request, pdf_filename, 'application/pdf')
 
-
 async def save_part_to_file(part, directory):
-    filename = os.path.join(directory, part.filename)
-    with open(filename, 'wb') as file_:
+    filepath = os.path.join(directory, part.filename)
+    with open(filepath, 'wb') as file_:
         while True:
             chunk = await part.read_chunk(CHUNK_SIZE)
             if not chunk:
                 break
             file_.write(chunk)
-    logger.info(f'Saved part "{part.name}" to "{filename}"')
-    return filename
+
+    # Ensure the file exists
+    if os.path.exists(filepath):
+        logger.info("File exists: " + filepath)
+    else:
+        logger.error("File does not exist: " + filepath)
+
+    logger.info(f'Saved part "{part.name}" to "{filepath}"')
+    return filepath
 
 
 async def stream_file(request, filename, content_type):
