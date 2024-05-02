@@ -3,22 +3,28 @@
 weasyprint server
 
 A tiny aiohttp based web server that wraps weasyprint
-It expects a multipart/form-data upload containing a html file, an optional
+It expects a multipart/form-data upload containing an html file, an optional
 css file and optional attachments.
 """
 from aiohttp import web
 from urllib.parse import urlparse
-from weasyprint import CSS
-from weasyprint import default_url_fetcher
-from weasyprint import HTML
+from weasyprint import CSS, HTML, default_url_fetcher
+from weasyprint.text.fonts import FontConfiguration
 import logging
 import os.path
 import tempfile
+import sys
 
-CHUNK_SIZE = 65536
+# Configure logging at the top of the script
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)s %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]  # Ensure logs go to stdout
+)
 
 logger = logging.getLogger('weasyprint')
 
+CHUNK_SIZE = 65536
 
 class URLFetcher:
     """URL fetcher that only allows data URLs and known files"""
@@ -34,25 +40,20 @@ class URLFetcher:
         if parsed.scheme in ['', 'file'] and parsed.path:
             return default_url_fetcher(url)
             # if os.path.abspath(parsed.path) in self.valid_paths: # That's bollocks; valid_paths is never set
-            #     return default_url_fetcher(url)
-            # else:
-            #     raise ValueError('Only known path allowed')
+                #     return default_url_fetcher(url)
+                # else:
+                #     raise ValueError('Only known path allowed')
 
         raise ValueError('External resources are not allowed')
 
 
 async def render_pdf(request):
+    logger.info("Received request for PDF rendering.")
     form_data = {}
     temp_dir = None
 
-    if not request.content_type == 'multipart/form-data':
-        logger.info(
-            'Bad request. Received content type %s instead of multipart/form-data.',
-            request.content_type,
-        )
-        return web.Response(status=400, text="Multipart request required.")
-
     reader = await request.multipart()
+    logger.info("Processing multipart data.")
 
     with tempfile.TemporaryDirectory() as temp_dir:
         while True:
@@ -61,12 +62,17 @@ async def render_pdf(request):
             if part is None:
                 break
 
+            logger.info(f"Processing part: {part.name}")
             if (
                 part.name in ['html', 'css']
                 or part.name.startswith('attachment.')
                 or part.name.startswith('asset.')
             ):
                 form_data[part.name] = await save_part_to_file(part, temp_dir)
+
+        logger.info(f"Form data processed: {list(form_data.keys())}")
+
+        font_config = FontConfiguration()
 
         if 'html' not in form_data:
             logger.info('Bad request. No html file provided.')
@@ -76,21 +82,30 @@ async def render_pdf(request):
         if 'css' in form_data:
             css = CSS(filename=form_data['css'], url_fetcher=URLFetcher(form_data.values()))
         else:
-            css = CSS(string='@page { size: A4; margin: 2cm 2.5cm; }')
+            # Add custom fonts, see https://stackoverflow.com/a/55134862/1348352
+            css = CSS(string='''
+                @font-face {
+                    font-family: "Zeitung Micro Pro";
+                    src: url(file:///home/user/project/Zeitung-Micro-Pro.ttf) format("truetype");
+                }
+                @font-face {
+                    font-family: "Tisa Pro";
+                    src: url(file:///home/user/project/Tisa-Pro.ttf) format("truetype");
+                }
+            ''', font_config=font_config)
 
         attachments = [
             attachment for name, attachment in form_data.items()
             if name.startswith('attachment.')
         ]
+
         pdf_filename = os.path.join(temp_dir, 'output.pdf')
 
         try:
-            html.write_pdf(
-                pdf_filename, stylesheets=[css], attachments=attachments)
+            html.write_pdf(pdf_filename, stylesheets=[css], font_config=font_config, attachments=attachments)
         except Exception:
             logger.exception('PDF generation failed')
-            return web.Response(
-                status=500, text="PDF generation failed.")
+            return web.Response(status=500, text="PDF generation failed.")
         else:
             return await stream_file(request, pdf_filename, 'application/pdf')
 
@@ -103,6 +118,7 @@ async def save_part_to_file(part, directory):
             if not chunk:
                 break
             file_.write(chunk)
+    logger.info(f'Saved part "{part.name}" to "{filename}"')
     return filename
 
 
@@ -116,6 +132,7 @@ async def stream_file(request, filename, content_type):
             f'attachment; filename="{os.path.basename(filename)}"',
         },
     )
+
     await response.prepare(request)
 
     with open(filename, 'rb') as outfile:
@@ -126,18 +143,14 @@ async def stream_file(request, filename, content_type):
             await response.write(data)
 
     await response.write_eof()
+
     return response
 
 
 async def healthcheck(request):
     return web.Response(status=200, text="OK")
 
-
 if __name__ == '__main__':
-    logging.basicConfig(
-        format='%(asctime)s %(levelname)s %(name)s %(message)s',
-        level=logging.INFO,
-    )
     app = web.Application()
     app.add_routes([web.post('/', render_pdf)])
     app.add_routes([web.get('/healthcheck', healthcheck)])
