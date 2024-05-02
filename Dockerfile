@@ -24,11 +24,10 @@ RUN cd py3-pydyf && \
     cd ../py3-weasyprint && \
     abuild -r
 
-
 FROM alpine:3.19
 
 RUN addgroup --system weasyprint \
-     && adduser --system --ingroup weasyprint weasyprint
+    && adduser --system --ingroup weasyprint weasyprint
 
 COPY --from=pkg-builder /home/packager/packages/work/ /packages/
 COPY --from=pkg-builder /home/packager/.abuild/*.pub /etc/apk/keys/
