@@ -121,10 +121,8 @@ async def save_part_to_file(part, directory):
             file_.write(chunk)
 
     # Ensure the file exists
-    if os.path.exists(filepath):
-        logger.info("File exists: " + filepath)
-    else:
-        logger.error("File does not exist: " + filepath)
+    if not os.path.exists(filepath):
+        logger.error("File not found after writing to " + filepath)
 
     logger.info(f'Saved part "{part.name}" to "{filepath}"')
     return filepath
