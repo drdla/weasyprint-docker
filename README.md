@@ -1,6 +1,6 @@
 # weasyprint
 
-A dockerized web service for creating PDFs from HTML using WeasyPrint
+A dockerized web service for creating PDFs from HTML using WeasyPrint.
 
 ## Description
 
